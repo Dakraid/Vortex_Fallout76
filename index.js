@@ -11,7 +11,9 @@ const parser = new vortex_parse_ini_1.default(new vortex_parse_ini_1.WinapiForma
 const ba2Files = [];
 function getINIFile(context) {
     const configExample = '[Archive]\n' +
-        'sResourceArchive2List=';
+        'sResourceArchive2List=\n' +
+        'sResourceDataDirsFinal=STRINGS\\\n' +
+        'bInvalidateOlderFiles=1\n';
     const iniPath = path.join(electron_1.remote.app.getPath('documents'), 'My Games', 'Fallout 76', 'Fallout76Custom.ini');
     try {
         vortex_api_1.fs.statSync(iniPath);
@@ -30,6 +32,15 @@ function getINIFile(context) {
             message: 'Fallout 76 custom ini could not be read or created, please ensure write access for Vortex.',
         });
     }
+}
+function writeINI(context, data) {
+    let iniFile;
+    parser.read(getINIFile(context))
+        .then((iniFileIn) => {
+        iniFile = iniFileIn;
+        iniFile.data.Archive.sResourceArchive2List = data;
+        parser.write(getINIFile(context), iniFile);
+    });
 }
 function getBethPath() {
     const instPath = winapi.RegGetValue('HKEY_LOCAL_MACHINE', 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fallout 76', 'Path');
@@ -119,6 +130,27 @@ function addArchives(context, profileId, modId) {
         context.api.showErrorNotification('Failed to read mod', err);
     });
 }
+function saveArray(context) {
+    const state = context.api.getState();
+    const target = path.join(vortex_api_1.selectors.installPath(state), "fallout76archives.json");
+    const jsonOut = JSON.stringify(ba2Files);
+    vortex_api_1.fs.writeFileAsync(target, jsonOut);
+}
+function loadArray(context) {
+    const state = context.api.getState();
+    const target = path.join(vortex_api_1.selectors.installPath(state), "fallout76archives.json");
+    ba2Files.length = 0;
+    let fileArray;
+    try {
+        const jsonIn = vortex_api_1.fs.readFileSync(target);
+        fileArray = JSON.parse(jsonIn.toString());
+    }
+    catch (err) {
+        saveArray(context);
+    }
+    fileArray.forEach(archive => ba2Files.push(archive));
+    console.log(ba2Files);
+}
 let tools = [{
         id: 'FO76Edit',
         name: 'FO76Edit',
@@ -149,48 +181,34 @@ function main(context) {
             steamAppId: 1151340,
         }
     });
-    let prevDeployment;
     context.once(() => {
         context.api.events.on('mod-disabled', (profileId, modId) => {
             removeArchives(context, profileId, modId);
+            saveArray(context);
         });
         context.api.events.on('mod-enabled', (profileId, modId) => {
             addArchives(context, profileId, modId);
+            saveArray(context);
         });
-        context.api.events.on('did-purge', (profileId, deployment) => {
+        context.api.events.on('did-purge', () => {
             const state = context.api.getState();
             const gameId = vortex_api_1.selectors.activeGameId(state);
             if ('fallout76' !== gameId) {
                 return Promise.resolve();
             }
-            if (prevDeployment !== deployment) {
-                prevDeployment = deployment;
-                let iniFile;
-                parser.read(getINIFile(context))
-                    .then((iniFileIn) => {
-                    iniFile = iniFileIn;
-                    iniFile.data.Archive.sResourceArchive2List = "";
-                    parser.write(getINIFile(context), iniFile);
-                });
-            }
+            writeINI(context, "");
+            saveArray(context);
         });
-        context.api.events.on('did-deploy', (profileId, deployment) => {
+        context.api.events.on('did-deploy', () => {
             const state = context.api.getState();
             const gameId = vortex_api_1.selectors.activeGameId(state);
             if ('fallout76' !== gameId) {
                 return Promise.resolve();
             }
-            if (prevDeployment !== deployment) {
-                prevDeployment = deployment;
-                let iniFile;
-                parser.read(getINIFile(context))
-                    .then((iniFileIn) => {
-                    iniFile = iniFileIn;
-                    iniFile.data.Archive.sResourceArchive2List = ba2Files.toString();
-                    parser.write(getINIFile(context), iniFile);
-                });
-            }
+            writeINI(context, ba2Files.toString());
+            saveArray(context);
         });
+        loadArray(context);
     });
     return true;
 }
