@@ -1,12 +1,13 @@
 import * as Promise from 'bluebird';
-import {fs, util, types, selectors} from 'vortex-api';
-import { remote } from 'electron';
+import {fs, util, types, selectors, actions} from 'vortex-api';
+import {remote} from 'electron';
 import semverGt from 'semver/functions/gt';
 import * as winapi from 'winapi-bindings';
 import * as path from 'path';
-import IniParser, { IniFile, WinapiFormat } from 'vortex-parse-ini';
+import IniParser, {IniFile, WinapiFormat} from 'vortex-parse-ini';
 
 const parser = new IniParser(new WinapiFormat());
+const ba2Files: string[] = [];
 
 // INI Location Function
 function getINIFile(context: types.IExtensionContext): string {
@@ -19,9 +20,9 @@ function getINIFile(context: types.IExtensionContext): string {
     } catch (err) {
         fs.writeFileSync(iniPath, configExample);
     }
-    
+
     try {
-        return fs.readFileSync(iniPath).toString('UTF-8');
+        return iniPath;
     } catch (err) {
         context.api.sendNotification({
             id: 'fallout76-noini',
@@ -67,33 +68,71 @@ function findGame(): Promise<string> {
     }
 }
 
-/*
-function doINI(profileId, deployment, context) {
-    remote.getCurrentWebContents().toggleDevTools();
-    const state = context.api.store.getState();
-    const profile = selectors.activeProfile(state);
-    
-    if ('fallout76' !== profile.gameId) {
+function removeArchives(context: types.IExtensionContext, profileId: string, modId: string) {
+    const state = context.api.getState();
+    const gameId = selectors.activeGameId(state);
+
+    if ('fallout76' !== gameId) {
         return Promise.resolve();
     }
-    
-    if (prevDeployment !== deployment) {
-        prevDeployment = deployment;
-        context.api.sendNotification({
-            id: 'bannerlord-activate-mods',
-            type: 'info',
-            allowSuppress: true,
-            message: 'Use game launcher to activate mods',
-        });
-    }
-}
-*/
 
-function debug(context: types.IExtensionContext) {
-    remote.getCurrentWebContents().toggleDevTools();
+    const mod: types.IMod = state.persistent.mods[gameId][modId];
+
+    fs.readdirAsync(path.join(selectors.installPath(state), mod.installationPath))
+        .then(files => {
+            const archives = files.filter(fileName => ['.ba2'].indexOf(path.extname(fileName).toLowerCase()) !== -1);
+            if (archives.length === 1) {
+                const index = ba2Files.indexOf(archives, 0);
+                if (index > -1) {
+                    archives.splice(index, 1);
+                }
+            } else if (archives.length > 1) {
+                archives.forEach(archives => {
+                    const index = ba2Files.indexOf(archives, 0);
+                    if (index > -1) {
+                        archives.splice(index, 1);
+                    }
+                });
+            }
+        })
+        .catch(err => {
+            context.api.showErrorNotification('Failed to read mod', err);
+        });
+}
+
+function addArchives(context: types.IExtensionContext, profileId: string, modId: string) {
     const state = context.api.getState();
-    const profile = selectors.activeGameId(state);
-    console.log("Current gameID: " + profile);
+    const gameId = selectors.activeGameId(state);
+
+    if ('fallout76' !== gameId) {
+        return Promise.resolve();
+    }
+
+    const mod: types.IMod = state.persistent.mods[gameId][modId];
+
+    fs.readdirAsync(path.join(selectors.installPath(state), mod.installationPath))
+        .catch(err => {
+            if (err.code === 'ENOENT') {
+                context.api.showErrorNotification(
+                    'A mod could no longer be found on disk. Please don\'t delete mods manually '
+                    + 'but uninstall them through Vortex.', err, {allowReport: false});
+                context.api.store.dispatch(actions.removeMod(gameId, modId));
+                return Promise.reject(new util.ProcessCanceled('mod was deleted'));
+            } else {
+                return Promise.reject(err);
+            }
+        })
+        .then(files => {
+            const archives = files.filter(fileName => ['.ba2'].indexOf(path.extname(fileName).toLowerCase()) !== -1);
+            if (archives.length === 1) {
+                ba2Files.push(archives);
+            } else if (archives.length > 1) {
+                archives.forEach(archives => ba2Files.push(archives));
+            }
+        })
+        .catch(err => {
+            context.api.showErrorNotification('Failed to read mod', err);
+        });
 }
 
 let tools = [{
@@ -104,7 +143,7 @@ let tools = [{
     requiredFiles: [
         'FO76Edit.exe',
     ],
-}, ];
+},];
 
 function main(context: types.IExtensionContext) {
     context.requireVersion('^1.2.0');
@@ -128,34 +167,59 @@ function main(context: types.IExtensionContext) {
         }
     });
 
-    context.registerAction('global-icons', 300, 'settings', {}, 'FO76 Debug', () => {
-        debug(context);
-    });
-
     let prevDeployment;
     context.once(() => {
-        context.api.events.on('did-deploy', (profileId, deployment) => {
-            const gameId = selectors.activeGameId(context.api.getState());
-    
+        context.api.events.on('mod-disabled', (profileId: string, modId: string) => {
+            removeArchives(context, profileId, modId)
+        });
+
+        context.api.events.on('mod-enabled', (profileId: string, modId: string) => {
+            addArchives(context, profileId, modId)
+        });
+
+        context.api.events.on('did-purge', (profileId, deployment) => {
+            const state = context.api.getState();
+            const gameId = selectors.activeGameId(state);
+
             if ('fallout76' !== gameId) {
                 return Promise.resolve();
             }
-    
+
             if (prevDeployment !== deployment) {
                 prevDeployment = deployment;
 
                 let iniFile: IniFile<any>;
-                
-                parser.read(getINIFile(context))  
+                parser.read(getINIFile(context))
                     .then((iniFileIn: IniFile<any>) => {
-                    iniFile = iniFileIn;
-                })
-                
-                console.log(iniFile);
+                        iniFile = iniFileIn;
+                        iniFile.data.Archive.sResourceArchive2List = "";
+                        parser.write(getINIFile(context), iniFile);
+                    })
+            }
+        });
+
+        context.api.events.on('did-deploy', (profileId, deployment) => {
+            const state = context.api.getState();
+            const gameId = selectors.activeGameId(state);
+
+            if ('fallout76' !== gameId) {
+                return Promise.resolve();
+            }
+
+            if (prevDeployment !== deployment) {
+                prevDeployment = deployment;
+
+                let iniFile: IniFile<any>;
+                parser.read(getINIFile(context))
+                    .then((iniFileIn: IniFile<any>) => {
+                        iniFile = iniFileIn;
+                        iniFile.data.Archive.sResourceArchive2List = ba2Files.toString();
+                        parser.write(getINIFile(context), iniFile);
+                    })
             }
         });
     });
-    
+
     return true;
 }
 
