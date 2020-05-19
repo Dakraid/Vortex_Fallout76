@@ -1,10 +1,6 @@
 {
-  "name": "Fallout 76 Support (Wastelanders)",
-  "author": "Netrve",
-  "version": "1.1.0",
-  "description": "An extension for Vortex, enabling support for Fallout 76 mod management through Vortex.",
-  "type": "game",
-  "path": "C:\\Users\\Netrve\\AppData\\Roaming\\Vortex\\plugins\\Fallout76Support-110-1-0-0-1587343999.zip.installing",
-  "bundled": false,
-  "modId": 110
+    "name":"Game: Fallout76",
+    "author":"Netrve",
+    "version":"2.0.0",
+    "description":"An extension for Vortex, enabling support for Fallout 76 mod management through Vortex."
 }
