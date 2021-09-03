@@ -172,7 +172,8 @@ let debouceUpdate = setTimeout(() => { }, 0);
 
 function deboucedUpdateArchiveList(previous, current, api) {
   const changedProfile = getChangedProfile(previous, current)
-  if (!changedProfile || changedProfile.gameId !== GAME_ID) {
+  // Ensure that the profile, the modstate and the gameid are correct
+  if (!changedProfile || !changedProfile.modState || changedProfile.gameId !== GAME_ID) {
     // Return if no profile, or the profile is not for FO76
     return
   }
