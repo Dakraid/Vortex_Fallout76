@@ -17,6 +17,10 @@ An extension for Vortex, enabling support for Fallout 76 mod management through 
 - Extract the archive to %appdata%\Vortex\plugins\game-fallout76.
 
 # Credits
+- Netrve - Original adaption to FO76
+- Pickysaurus ([Github](https://github.com/Pickysaurus) | [Nexusmods](https://www.nexusmods.com/skyrim/users/31179975)) - Initial INI Support
+- MassimoMx ([Github](https://github.com/mxswat) | [Nexusmods](https://www.nexusmods.com/fallout4/users/17996194)) - Improved INI Support
+
 Used imagery belongs in parts to Bethesda Softworks LLC and Blacktree Gaming LTD respectively.
 Description has been copied from Nagev's Mount and Blade II Bannerlord extension.
 The extension itself is based on the official Fallout 4 extension adapted for Fallout 76.
