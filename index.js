@@ -101,30 +101,31 @@ function installAndRegisterArchives(files) {
   return Promise.resolve({ instructions });
 }
 
-function updateArchiveList(profile, api) {
-  const state = api.store.getState();
-  const gameId = profile.gameId;
-
-  // Filter through the enabled mods that have BA2 archives
-  const enabledBA2Mods = Object.keys(profile.modState).map(key => {
-    if (!profile.modState[key].enabled) return;
-    const mod = state.persistent.mods[gameId][key];
-    if (mod.attributes.ba2archives) return mod;
-    else return;
-  }).filter(m => m !== undefined);
-
-  // Join up all the BA2s into a single array.
-  const enabledBA2s = enabledBA2Mods.map((mod) => mod.attributes.ba2archives.join(',')).join(',').split(',');
-
-  const disabledBA2Mods = Object.keys(profile.modState).map(key => {
-    if (profile.modState[key].enabled) return;
+// NOTE: `const mod` can be undefined when the profile still has data for a modId, but the mod might've been uninstalled
+function getBA2Mods(payload, condition) {
+  const { profile, state, gameId } = payload;
+  const BA2Mods = Object.keys(profile.modState).map(key => {
+    if (condition(profile, key)) return;
     const mod = state.persistent.mods[gameId][key];
     if (mod && mod.attributes && mod.attributes.ba2archives) return mod;
     else return;
   }).filter(m => m !== undefined);
 
+  // Join up all the BA2s into a single array.
+  return BA2Mods.map((mod) => mod.attributes.ba2archives.join(',')).join(',').split(',');
+}
+
+function updateArchiveList(profile, api) {
+  const state = api.store.getState();
+  const gameId = profile.gameId;
+
+  const payload = { profile, state, gameId }
+
+  // Join up all the BA2s into a single array.
+  const enabledBA2s = getBA2Mods(payload, (profile, key) => !profile.modState[key].enabled);
+
   // Join up all the disabled BA2s into a single array.
-  const disbledBA2s = disabledBA2Mods.map((mod) => mod.attributes.ba2archives.join(',')).join(',').split(',');
+  const disbledBA2s = getBA2Mods(payload, (profile, key) => profile.modState[key].enabled);
 
   const gamePath = state.settings.gameMode.discovered[GAME_ID].path;
   const dataFolder = path.join(gamePath, 'Data');
