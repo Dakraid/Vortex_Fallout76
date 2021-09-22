@@ -102,11 +102,11 @@ function installAndRegisterArchives(files) {
 }
 
 // NOTE: `const mod` can be undefined when the profile still has data for a modId, but the mod might've been uninstalled
-function getBA2Mods(payload, condition) {
+function getBA2Mods(payload, excludeModCondition) {
   const { profile, state, gameId } = payload;
-  const BA2Mods = Object.keys(profile.modState).map(key => {
-    if (condition(profile, key)) return;
-    const mod = state.persistent.mods[gameId][key];
+  const BA2Mods = Object.keys(profile.modState).map(modId => {
+    if (!excludeModCondition(profile, modId)) return;
+    const mod = state.persistent.mods[gameId][modId];
     if (mod && mod.attributes && mod.attributes.ba2archives) return mod;
     else return;
   }).filter(m => m !== undefined);
@@ -121,11 +121,11 @@ function updateArchiveList(profile, api) {
 
   const payload = { profile, state, gameId }
 
-  // Join up all the BA2s into a single array.
-  const enabledBA2s = getBA2Mods(payload, (profile, key) => !profile.modState[key].enabled);
+  // Get all enabled BA2s into a single array.
+  const enabledBA2s = getBA2Mods(payload, (profile, modId) => profile.modState[modId].enabled);
 
-  // Join up all the disabled BA2s into a single array.
-  const disbledBA2s = getBA2Mods(payload, (profile, key) => profile.modState[key].enabled);
+  // Get all disabled BA2s into a single array.
+  const disbledBA2s = getBA2Mods(payload, (profile, modId) => !profile.modState[modId].enabled);
 
   const gamePath = state.settings.gameMode.discovered[GAME_ID].path;
   const dataFolder = path.join(gamePath, 'Data');
