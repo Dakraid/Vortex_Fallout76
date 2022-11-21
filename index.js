@@ -5,7 +5,6 @@ const winapi = require('winapi-bindings');
 const path = require('path');
 const semver = require('semver');
 const IniParser = require('vortex-parse-ini');
-const { fstatSync } = require('fs');
 const parser = new IniParser.default(new IniParser.WinapiFormat());
 
 const GAME_ID = 'fallout76';
