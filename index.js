@@ -9,6 +9,7 @@ const parser = new IniParser.default(new IniParser.WinapiFormat());
 
 const GAME_ID = 'fallout76';
 const STEAM_APP_ID = '1151340';
+const XBOX_ID = 'BethesdaSoftworks.Fallout76-PC';
 const ARCHIVE_EXT = '.ba2';
 const fallout76CustomINI = 'Fallout76Custom.ini';
 const iniPath = path.join(remote.app.getPath('documents'), 'My Games', 'Fallout 76');
@@ -24,7 +25,7 @@ const tools = [
 ]
 
 function findGame() {
-  return util.GameStoreHelper.findByAppId(STEAM_APP_ID)
+  return util.GameStoreHelper.findByAppId(STEAM_APP_ID, XBOX_ID)
     .then((game) => {
       return game.path;
     })
@@ -181,6 +182,17 @@ function deboucedUpdateArchiveList(previous, current, api) {
   updateArchiveList(changedProfile, api)
 }
 
+async function findExecutable(api) {
+  const state = api.getState();
+  const discovery = state.settings.gameMode.discovered?.[GAME_ID];
+  const store = discovery.store;
+
+  if (!['steam', 'xbox'].includes(store)) log('warn', 'Could not find game store for Fallout 76. Assuming EXE name is Fallout76.exe');
+
+  if (store === 'xbox') return 'Project76_GamePass.exe';
+  else return 'Fallout76.exe';
+}
+
 function main(context) {
   context.requireVersion('^1.2.0');
   context.registerGame({
@@ -192,10 +204,8 @@ function main(context) {
     queryModPath: () => 'data',
     setup: () => onGameModeActivated(GAME_ID, context.api),
     logo: path.join('assets', 'gameart.jpg'),
-    executable: () => 'Fallout76.exe',
-    requiredFiles: [
-      'Fallout76.exe',
-    ],
+    executable: () => findExecutable(context.api),
+    requiredFiles: [],
     environment: {
       SteamAPPId: STEAM_APP_ID,
     },
@@ -234,7 +244,7 @@ function migrate200(api, oldVersion) {
   const state = api.store.getState();
   const activatorId = selectors.activatorForGame(state, GAME_ID);
   const activator = util.getActivator(activatorId);
-  const discovery = util.getSafe(state, ['settings', 'gameMode', 'discovered', BLOODSTAINED_ID], undefined);
+  const discovery = util.getSafe(state, ['settings', 'gameMode', 'discovered', GAME_ID], undefined);
   const mods = util.getSafe(state, ['persistent', 'mods', GAME_ID], undefined);
 
   // If we're not managed Fallout 76 yet, do nothing.
