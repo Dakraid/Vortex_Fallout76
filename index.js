@@ -208,7 +208,7 @@ function findExecutable(discoveryPath) {
   }
 
   log('error', 'Neither the Steam or Xbox EXE paths exist for Fallout 76');
-  return;
+  return steamExe;
   // throw new Error('Neither the Steam or Xbox EXE paths exist for Fallout 76');
 }
 
