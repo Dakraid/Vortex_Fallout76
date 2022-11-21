@@ -108,7 +108,7 @@ function getBA2Mods(payload, excludeModCondition) {
   const BA2Mods = Object.keys(profile.modState).map(modId => {
     if (!excludeModCondition(profile, modId)) return;
     const mod = state.persistent.mods[gameId][modId];
-    if (mod && mod.attributes && mod.attributes.ba2archives) return mod;
+    if (mod && mod?.attributes && mod?.attributes.ba2archives) return mod;
     else return;
   }).filter(m => m !== undefined);
 
@@ -185,7 +185,7 @@ function deboucedUpdateArchiveList(previous, current, api) {
 async function findExecutable(api) {
   const state = api.getState();
   const discovery = state.settings.gameMode.discovered?.[GAME_ID];
-  const store = discovery.store;
+  const store = discovery?.store;
 
   if (!['steam', 'xbox'].includes(store)) log('warn', 'Could not find game store for Fallout 76. Assuming EXE name is Fallout76.exe');
 
