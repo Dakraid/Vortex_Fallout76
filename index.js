@@ -5,6 +5,7 @@ const winapi = require('winapi-bindings');
 const path = require('path');
 const semver = require('semver');
 const IniParser = require('vortex-parse-ini');
+const { fstatSync } = require('fs');
 const parser = new IniParser.default(new IniParser.WinapiFormat());
 
 const GAME_ID = 'fallout76';
@@ -24,12 +25,13 @@ const tools = [
   }
 ]
 
-function findGame() {
-  return util.GameStoreHelper.findByAppId(STEAM_APP_ID, XBOX_ID)
+async function findGame() {
+  return util.GameStoreHelper.findByAppId([STEAM_APP_ID, XBOX_ID])
     .then((game) => {
-      return game.path;
+      return game.gamePath;
+      // return (game.gameStoreId === 'xbox') ? path.join(game.gamePath, 'Content') : game.gamePath;
     })
-    .catch(() => {
+    .catch((err) => {
       // Try finding the game on Bethesda.net if the Steam detection fails.
       const bethNetPath = winapi.RegGetValue('HKEY_LOCAL_MACHINE',
         'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fallout 76',
@@ -182,15 +184,32 @@ function deboucedUpdateArchiveList(previous, current, api) {
   updateArchiveList(changedProfile, api)
 }
 
-async function findExecutable(api) {
-  const state = api.getState();
-  const discovery = state.settings.gameMode.discovered?.[GAME_ID];
-  const store = discovery?.store;
+function findExecutable(discoveryPath) {
+  const steamExe = 'Fallout76.exe';
+  const xboxExe = 'Project76_GamePass.exe';
 
-  if (!['steam', 'xbox'].includes(store)) log('warn', 'Could not find game store for Fallout 76. Assuming EXE name is Fallout76.exe');
+  if (!discoveryPath) return steamExe;
 
-  if (store === 'xbox') return 'Project76_GamePass.exe';
-  else return 'Fallout76.exe';
+  try {
+    // Steam version
+    fs.statSync(path.join(discoveryPath, steamExe));
+    return steamExe;
+  }
+  catch(err) {
+    // Could not stat to Steam path
+  }
+
+  try {
+    //Xbox version
+    fs.statSync(path.join(discoveryPath, xboxExe));
+    return xboxExe;
+  }
+  catch(err) {
+    // Could not stat the Xbox path
+  }
+
+  log('error', 'Neither the Steam or Xbox EXE paths exist for Fallout 76');
+  throw new Error('Neither the Steam or Xbox EXE paths exist for Fallout 76');
 }
 
 function main(context) {
@@ -204,8 +223,8 @@ function main(context) {
     queryModPath: () => 'data',
     setup: () => onGameModeActivated(GAME_ID, context.api),
     logo: path.join('assets', 'gameart.jpg'),
-    executable: () => findExecutable(context.api),
-    requiredFiles: [],
+    executable: findExecutable,
+    requiredFiles: [ 'Data' ],
     environment: {
       SteamAPPId: STEAM_APP_ID,
     },
