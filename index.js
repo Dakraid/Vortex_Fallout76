@@ -9,6 +9,7 @@ const parser = new IniParser.default(new IniParser.WinapiFormat());
 
 const GAME_ID = 'fallout76';
 const STEAM_APP_ID = '1151340';
+const XBOX_ID = 'BethesdaSoftworks.Fallout76-PC';
 const ARCHIVE_EXT = '.ba2';
 const fallout76CustomINI = 'Fallout76Custom.ini';
 const iniPath = path.join(remote.app.getPath('documents'), 'My Games', 'Fallout 76');
@@ -23,12 +24,13 @@ const tools = [
   }
 ]
 
-function findGame() {
-  return util.GameStoreHelper.findByAppId(STEAM_APP_ID)
+async function findGame() {
+  return util.GameStoreHelper.findByAppId([STEAM_APP_ID, XBOX_ID])
     .then((game) => {
-      return game.path;
+      return game.gamePath;
+      // return (game.gameStoreId === 'xbox') ? path.join(game.gamePath, 'Content') : game.gamePath;
     })
-    .catch(() => {
+    .catch((err) => {
       // Try finding the game on Bethesda.net if the Steam detection fails.
       const bethNetPath = winapi.RegGetValue('HKEY_LOCAL_MACHINE',
         'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fallout 76',
@@ -107,7 +109,7 @@ function getBA2Mods(payload, excludeModCondition) {
   const BA2Mods = Object.keys(profile.modState).map(modId => {
     if (!excludeModCondition(profile, modId)) return;
     const mod = state.persistent.mods[gameId][modId];
-    if (mod && mod.attributes && mod.attributes.ba2archives) return mod;
+    if (mod && mod?.attributes && mod?.attributes.ba2archives) return mod;
     else return;
   }).filter(m => m !== undefined);
 
@@ -181,6 +183,35 @@ function deboucedUpdateArchiveList(previous, current, api) {
   updateArchiveList(changedProfile, api)
 }
 
+function findExecutable(discoveryPath) {
+  const steamExe = 'Fallout76.exe';
+  const xboxExe = 'Project76_GamePass.exe';
+
+  if (!discoveryPath) return steamExe;
+
+  try {
+    // Steam version
+    fs.statSync(path.join(discoveryPath, steamExe));
+    return steamExe;
+  }
+  catch(err) {
+    // Could not stat to Steam path
+  }
+
+  try {
+    //Xbox version
+    fs.statSync(path.join(discoveryPath, xboxExe));
+    return xboxExe;
+  }
+  catch(err) {
+    // Could not stat the Xbox path
+  }
+
+  log('error', 'Neither the Steam or Xbox EXE paths exist for Fallout 76');
+  return steamExe;
+  // throw new Error('Neither the Steam or Xbox EXE paths exist for Fallout 76');
+}
+
 function main(context) {
   context.requireVersion('^1.2.0');
   context.registerGame({
@@ -192,10 +223,8 @@ function main(context) {
     queryModPath: () => 'data',
     setup: () => onGameModeActivated(GAME_ID, context.api),
     logo: path.join('assets', 'gameart.jpg'),
-    executable: () => 'Fallout76.exe',
-    requiredFiles: [
-      'Fallout76.exe',
-    ],
+    executable: findExecutable,
+    requiredFiles: [ 'Data' ],
     environment: {
       SteamAPPId: STEAM_APP_ID,
     },
@@ -234,7 +263,7 @@ function migrate200(api, oldVersion) {
   const state = api.store.getState();
   const activatorId = selectors.activatorForGame(state, GAME_ID);
   const activator = util.getActivator(activatorId);
-  const discovery = util.getSafe(state, ['settings', 'gameMode', 'discovered', BLOODSTAINED_ID], undefined);
+  const discovery = util.getSafe(state, ['settings', 'gameMode', 'discovered', GAME_ID], undefined);
   const mods = util.getSafe(state, ['persistent', 'mods', GAME_ID], undefined);
 
   // If we're not managed Fallout 76 yet, do nothing.
