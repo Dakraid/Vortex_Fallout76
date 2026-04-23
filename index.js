@@ -271,7 +271,7 @@ function migrate200(api, oldVersion) {
   // If we're not managing mods for Fallout 76, do nothing.
   if (mods === undefined || Object.keys(mods).length === 0) return Promise.resolve();
 
-  const stagingFolder = selectors.installPath(store.getState());
+  const stagingFolder = selectors.installPath(api.getState());
 
   // Wait for the UI to load.
   return api.awaitUI()
