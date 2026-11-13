@@ -44,15 +44,32 @@ function onGameModeActivated(gameId, api) {
   if (gameId !== GAME_ID) return;
   const ini = path.join(iniPath, fallout76CustomINI)
 
+  const refreshArchives = () => {
+    const state = api.store.getState();
+    const profileId = selectors.activeProfileId(state);
+    const profile = state.persistent.profiles[profileId];
+    if (profile && profile.gameId === GAME_ID) {
+      updateArchiveList(profile, api);
+    }
+  };
+
   // Make sure the folder in My Documents exists, create it if not. 
   return fs.ensureDirAsync(iniPath)
     .then(() => {
       // See if our INI exists
-      fs.statAsync(ini)
-        .then(() => ini)
+      return fs.statAsync(ini)
+        .then(() => {
+          refreshArchives();
+          return ini;
+        })
         .catch(err => {
           // If the INI doesn't exist, make one.
-          if (err.code === 'ENOENT') return createINI(ini, api);
+          if (err.code === 'ENOENT') {
+            return createINI(ini, api).then((createdIni) => {
+              if (createdIni) refreshArchives();
+              return createdIni;
+            });
+          }
           // report any other errors.
           else api.sendNotification({ id: 'fallout76-ini-error', type: 'error', title: 'Error reading Fallout76Custom.ini', message: `${err.code} - ${err.message}` });
         })
@@ -128,13 +145,23 @@ function updateArchiveList(profile, api) {
   // Get all disabled BA2s into a single array.
   const disbledBA2s = getBA2Mods(payload, (profile, modId) => !profile.modState[modId].enabled);
 
-  const gamePath = state.settings.gameMode.discovered[GAME_ID].path;
-  const dataFolder = path.join(gamePath, 'Data');
+  const gamePath = state.settings?.gameMode?.discovered?.[GAME_ID]?.path;
+  if (!gamePath) return;
+
   const fallout76Custom = path.join(iniPath, fallout76CustomINI);
 
   return parser.read(fallout76Custom)
     .then((ini) => {
-      const originalsResourceArchive2List = ini.data.Archive.sResourceArchive2List.split(',').map(s => s.trim());
+      if (!ini.data || !ini.data.Archive) {
+        if (!ini.data) ini.data = {};
+        ini.data.Archive = {};
+      }
+
+      const originalsResourceArchive2List = (ini.data.Archive.sResourceArchive2List || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s);
+
       // Remove ba2s from archive list if is marked as disabled
       // This will allow for any user made changes to the sResourceArchive2List to be untouched
       let filteredOriginalsResourceArchive2List = originalsResourceArchive2List.filter(e => !disbledBA2s.includes(e));
@@ -143,7 +170,7 @@ function updateArchiveList(profile, api) {
       const cleanedArchivesList = [...new Set([...enabledBA2s, ...filteredOriginalsResourceArchive2List])].filter(function (el) {
         return !!el;
       });
-      ini.data.Archive.sResourceArchive2List = cleanedArchivesList
+      ini.data.Archive.sResourceArchive2List = cleanedArchivesList.join(',');
       return parser.write(fallout76Custom, ini).then(() => Promise.resolve())
         .catch(err => log('error', 'Error updating Fallout76Custom.ini', err));
     })
@@ -170,9 +197,9 @@ function getChangedProfile(previous, current) {
   }
 }
 
-let debouceUpdate = setTimeout(() => { }, 0);
+let debounceUpdate = setTimeout(() => { }, 0);
 
-function deboucedUpdateArchiveList(previous, current, api) {
+function debouncedUpdateArchiveList(previous, current, api) {
   const changedProfile = getChangedProfile(previous, current)
   // Ensure that the profile, the modstate and the gameid are correct
   if (!changedProfile || !changedProfile.modState || changedProfile.gameId !== GAME_ID) {
@@ -193,7 +220,7 @@ function findExecutable(discoveryPath) {
     fs.statSync(path.join(discoveryPath, steamExe));
     return steamExe;
   }
-  catch(err) {
+  catch (err) {
     // Could not stat to Steam path
   }
 
@@ -202,7 +229,7 @@ function findExecutable(discoveryPath) {
     fs.statSync(path.join(discoveryPath, xboxExe));
     return xboxExe;
   }
-  catch(err) {
+  catch (err) {
     // Could not stat the Xbox path
   }
 
@@ -223,7 +250,7 @@ function main(context) {
     setup: () => onGameModeActivated(GAME_ID, context.api),
     logo: path.join('assets', 'gameart.jpg'),
     executable: findExecutable,
-    requiredFiles: [ 'Data' ],
+    requiredFiles: ['Data'],
     environment: {
       SteamAPPId: STEAM_APP_ID,
     },
@@ -239,15 +266,22 @@ function main(context) {
   context.registerMigration(old => migrate200(context.api, old));
 
   context.once(() => {
+    const state = context.api.store.getState();
+    const activeGameId = selectors.activeGameId(state);
+
+    if (activeGameId === GAME_ID) {
+      onGameModeActivated(activeGameId, context.api);
+    }
+
     // When we activate Fallout 76, make sure the custom INI exists.
     context.api.events.on('gamemode-activated', (gameId) => onGameModeActivated(gameId, context.api));
 
     // On profile state change update the list of BA2s
     context.api.onStateChange(['persistent', 'profiles'],
       (previous, current) => {
-        clearTimeout(debouceUpdate)
-        debouceUpdate = setTimeout(() => {
-          deboucedUpdateArchiveList(previous, current, context.api)
+        clearTimeout(debounceUpdate)
+        debounceUpdate = setTimeout(() => {
+          debouncedUpdateArchiveList(previous, current, context.api)
         }, 500);
       });
   });
@@ -266,12 +300,12 @@ function migrate200(api, oldVersion) {
   const mods = util.getSafe(state, ['persistent', 'mods', GAME_ID], undefined);
 
   // If we're not managed Fallout 76 yet, do nothing.
-  if (discovery === undefined || !discovery.path === undefined || !activator === undefined) return Promise.resolve();
+  if (!discovery || !discovery.path || !activator) return Promise.resolve();
 
   // If we're not managing mods for Fallout 76, do nothing.
   if (mods === undefined || Object.keys(mods).length === 0) return Promise.resolve();
 
-  const stagingFolder = selectors.installPath(store.getState());
+  const stagingFolder = selectors.installPath(api.store.getState());
 
   // Wait for the UI to load.
   return api.awaitUI()
