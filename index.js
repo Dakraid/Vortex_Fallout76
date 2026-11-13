@@ -284,6 +284,18 @@ function main(context) {
           debouncedUpdateArchiveList(previous, current, context.api)
         }, 500);
       });
+
+    // Deployments (manual "Apply" or automatic) don't change the profile, so the
+    // onStateChange handler above never fires for them. Vortex emits "did-deploy"
+    // (via emitAndAwait) once deployment has finished, which is our cue to refresh
+    // sResourceArchive2List so it always matches the enabled mods.
+    context.api.onAsync('did-deploy', async (profileId) => {
+      const state = context.api.store.getState();
+      const profile = state.persistent.profiles[profileId];
+      if (profile && (profile.gameId === GAME_ID)) {
+        await updateArchiveList(profile, context.api);
+      }
+    });
   });
 
   return true;
